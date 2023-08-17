@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	helper "github.com/venky1306/jwt-authentication/helpers"
@@ -31,7 +32,7 @@ func HashPassword(password string) string {
 	return string(hashedPassword)
 }
 
-func VerifyPassword(providedPassword, userPassword string) (bool, string) {
+func VerifyPassword(userPassword, providedPassword string) (bool, string) {
 	err := bcrypt.CompareHashAndPassword([]byte(providedPassword), []byte(userPassword))
 	check := true
 	msg := ""
@@ -152,8 +153,50 @@ func Login() gin.HandlerFunc {
 
 }
 
-func GetUsers() {
+func GetUsers() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if err := helper.CheckUserType(c, "ADMIN"); err != nil {
+			fmt.Println("here")
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 
+		recordPerPage, err := strconv.Atoi(c.Query("recordPerPage"))
+		if err != nil || recordPerPage < 1 {
+			recordPerPage = 10
+		}
+		page, err := strconv.Atoi(c.Query("page"))
+		if err != nil || page < 0 {
+			page = 1
+		}
+
+		startIndex := (page - 1) * recordPerPage
+		startIndex, err = strconv.Atoi(c.Query("startIndex"))
+
+		matchStage := bson.D{{"$match", bson.D{{}}}}
+		groupStage := bson.D{{"$group", bson.D{
+			{"_id", bson.D{{"_id", "null"}}},
+			{"total_count", bson.D{{"$sum", 1}}},
+			{"data", bson.D{{"$push", "$$ROOT"}}},
+		}}}
+		projectStage := bson.D{{"$project", bson.D{
+			{"_id", 0},
+			{"total_count", 1},
+			{"users", bson.D{{"$slice", []interface{}{"$data", startIndex, recordPerPage}}}},
+		}}}
+		result, err := userCollection.Aggregate(ctx, mongo.Pipeline{matchStage, groupStage, projectStage})
+		defer cancel()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while listing the users"})
+			return
+		}
+		var allUsers []bson.M
+		if err = result.All(ctx, &allUsers); err != nil {
+			log.Fatal(err)
+		}
+		c.JSON(http.StatusOK, allUsers[0])
+	}
 }
 
 func GetUser() gin.HandlerFunc {
