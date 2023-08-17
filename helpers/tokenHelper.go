@@ -1,7 +1,8 @@
-package helper
+package helpers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -28,7 +29,7 @@ var userCollection *mongo.Collection = database.OpenCollection(database.Client, 
 
 var SECRET_KEY string = os.Getenv("SECRET_KEY")
 
-func GenerateAllTokens(email, first_name, last_name, uid, user_type string) (signedToken string, signedRefreshToken string, err error) {
+func GenerateAllTokens(email, first_name, last_name, user_type, uid string) (signedToken string, signedRefreshToken string, err error) {
 	claims := &SignedDetails{
 		Email:      email,
 		First_name: first_name,
@@ -53,6 +54,33 @@ func GenerateAllTokens(email, first_name, last_name, uid, user_type string) (sig
 		return "", "", err
 	}
 	return token, refreshToken, nil
+}
+
+func ValidateToken(signedToken string) (claims *SignedDetails, msg string) {
+	token, err := jwt.ParseWithClaims(
+		signedToken,
+		&SignedDetails{},
+		func(token *jwt.Token) (interface{}, error) {
+			return []byte(SECRET_KEY), nil
+		},
+	)
+	if err != nil {
+		msg = err.Error()
+		return
+	}
+	claims, ok := token.Claims.(*SignedDetails)
+	if !ok {
+		msg = fmt.Sprint("the token is invalid")
+		msg = err.Error()
+		return
+	}
+
+	if claims.ExpiresAt < time.Now().Local().Unix() {
+		msg = fmt.Sprint("token is expired")
+		msg = err.Error()
+		return
+	}
+	return claims, msg
 }
 
 func UpdateAllTokens(signedToken, signedRefreshToken, userId string) {
