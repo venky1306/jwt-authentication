@@ -30,6 +30,5 @@ func Authenticate() gin.HandlerFunc {
 		c.Set("uid", claims.Uid)
 		c.Set("user_type", claims.User_type)
 		c.Next()
-		fmt.Println(claims.Uid)
 	}
 }
